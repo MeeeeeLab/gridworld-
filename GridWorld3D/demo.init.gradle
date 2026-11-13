@@ -1,0 +1,8 @@
+// The repository tracks historical build outputs: leave them untouched.
+gradle.projectsLoaded {
+    def key = Integer.toHexString(rootProject.projectDir.canonicalPath.hashCode())
+    def output = new File(gradle.gradleUserHomeDir, "gridworld-demo/${key}")
+    rootProject.allprojects { p ->
+        p.layout.buildDirectory.set(new File(output, p == rootProject ? 'root' : p.name))
+    }
+}

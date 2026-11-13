@@ -4,6 +4,7 @@ plugins {
 }
 
 dependencies {
+    api project(':algorithm')
     api libs.jmeCore
     runtimeOnly libs.jmeJogg
     runtimeOnly libs.jmePlugins

@@ -87,7 +87,7 @@ frame.setLocationRelativeTo(null);
 frame.setVisible(true);
         int goalRow = 4;
         int goalCol = 4;
-       SearchController controller = new SearchController(grid, goalRow, goalCol);
+       SearchController controller = new SearchController(new GridMap(grid), goalRow, goalCol);
 Timer timer = new Timer(500, e -> {
    SearchStatus status = controller.nextStep();
 
