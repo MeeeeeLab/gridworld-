@@ -15,11 +15,12 @@ public final class RaceGame extends SimpleApplication {
     private static final ColorRGBA SCOUT=new ColorRGBA(.12f,.9f,.87f,1), TANK=new ColorRGBA(1,.56f,.22f,1);
     private final RaceConnection connection;
     private final Runnable onViewReady;
+    private final java.util.Map<Integer, java.util.function.Consumer<Boolean>> keyHandlers=new java.util.HashMap<>();
     private boolean readinessReported;
     private final Geometry[] mapTiles=new Geometry[RaceWorld.SIZE*RaceWorld.SIZE];
     private final Node enemy=new Node("opponent"), effects=new Node("attacks"), mini=new Node("minimap");
     private final char[] drawn=new char[RaceWorld.SIZE*RaceWorld.SIZE];
-    private BitmapText status, nav, weapon, result, clock, position;
+    private BitmapText status, nav, weapon, result, clock, position, scoring, breakdown;
     private Geometry selfDot, enemyDot;
     private float mapLeft, mapBottom;
     private boolean placed;
@@ -87,16 +88,20 @@ public final class RaceGame extends SimpleApplication {
             mapTiles[y*RaceWorld.SIZE+x]=rect(mini,mapLeft+x*TILE,mapBottom+(RaceWorld.SIZE-1-y)*TILE,TILE-1,TILE-1,new ColorRGBA(.07f,.09f,.12f,1));
         selfDot=rect(mini,0,0,5,5,color(connection.id));selfDot.setLocalTranslation(0,0,1);
         enemyDot=rect(mini,0,0,5,5,color(1-connection.id));enemyDot.setLocalTranslation(0,0,1);
-        label("DARK = UNEXPLORED",mapLeft,mapBottom-10,10,muted);
+        label("DARK = UNKNOWN / COLOR = TRAIL",mapLeft-3,mapBottom-10,9,muted);
         label("GREEN = SHARED EXIT",mapLeft,mapBottom-25,10,ColorRGBA.Green);
         rect(guiNode,16,16,w-32,105,panel);rect(guiNode,16,119,w-32,2,color(connection.id));
         status=label("WAITING FOR BOTH PLAYERS",30,104,16,ColorRGBA.White);
         nav=label("",30,78,14,color(connection.id));
         weapon=label("",30,54,13,muted);
-        label("P1  WASD move  Q/E turn  SPACE pulse  N auto",30,34,11,SCOUT);
+        label("P1 W/S drive A/D turn SPACE fire N auto",30,34,11,SCOUT);
         label("P2  ARROWS drive/turn  ENTER cannon  M auto",w-344,34,11,TANK);
         label("+",w/2-6,h/2+8,24,color(connection.id));
-        result=label("",w/2-176,h/2+70,26,ColorRGBA.White);
+        result=label("",w/2-220,h/2+70,22,ColorRGBA.White);
+        breakdown=label("",w/2-220,h/2+40,16,ColorRGBA.White);
+        rect(guiNode,16,h-160,285,56,panel);
+        scoring=label("",30,h-121,18,color(connection.id));
+        label("-10 / cell   |   shortest route, higher rating",30,h-146,11,muted);
         // A simple cockpit silhouette gives the first-person view a different identity per role.
         rect(guiNode,w/2-48,122,96,17,color(connection.id).mult(.45f));
         rect(guiNode,w/2-12,139,24,connection.id==0?30:60,color(connection.id).mult(.7f));
@@ -104,8 +109,7 @@ public final class RaceGame extends SimpleApplication {
 
     private void controls() {
         bind(0,RaceWorld.Action.FORWARD,KeyInput.KEY_W); bind(0,RaceWorld.Action.BACK,KeyInput.KEY_S);
-        bind(0,RaceWorld.Action.LEFT,KeyInput.KEY_A); bind(0,RaceWorld.Action.RIGHT,KeyInput.KEY_D);
-        bind(0,RaceWorld.Action.TURN_LEFT,KeyInput.KEY_Q); bind(0,RaceWorld.Action.TURN_RIGHT,KeyInput.KEY_E);
+        bind(0,RaceWorld.Action.TURN_LEFT,KeyInput.KEY_A); bind(0,RaceWorld.Action.TURN_RIGHT,KeyInput.KEY_D);
         bind(0,RaceWorld.Action.FIRE,KeyInput.KEY_SPACE);bind(0,RaceWorld.Action.NAV,KeyInput.KEY_N);
         bind(1,RaceWorld.Action.FORWARD,KeyInput.KEY_UP);bind(1,RaceWorld.Action.BACK,KeyInput.KEY_DOWN);
         bind(1,RaceWorld.Action.TURN_LEFT,KeyInput.KEY_LEFT);bind(1,RaceWorld.Action.TURN_RIGHT,KeyInput.KEY_RIGHT);
@@ -114,7 +118,12 @@ public final class RaceGame extends SimpleApplication {
     private void bind(int id,RaceWorld.Action action,int key) {
         String name=id+":"+action;
         inputManager.addMapping(name,new KeyTrigger(key));
-        inputManager.addListener((ActionListener)(n,down,tpf)->connection.send(id,action,down),name);
+        keyHandlers.put(key,down->connection.send(id,action,down));
+        inputManager.addListener((ActionListener)(n,down,tpf)->handleKey(key,down),name);
+    }
+    public void handleKey(int key,boolean down) {
+        var handler=keyHandlers.get(key);
+        if(handler!=null)handler.accept(down);
     }
     @Override public void loseFocus() {
         connection.releaseAll(); // Prevent stuck movement when a player switches windows.
@@ -131,6 +140,13 @@ public final class RaceGame extends SimpleApplication {
             if(tile==drawn[i])continue;
             drawn[i]=tile;
             if(tile=='?')continue;
+            // Visited floors change color on the minimap without duplicating world geometry.
+            boolean newlyDiscovered=mapTiles[i].getUserData("discovered")==null;
+            mapTiles[i].setUserData("discovered",true);
+            if(!newlyDiscovered) {
+                mapTiles[i].setMaterial(material(color(connection.id).mult(.55f),false));
+                continue;
+            }
             int x=i%RaceWorld.SIZE,y=i/RaceWorld.SIZE;
             ColorRGBA floor=new ColorRGBA(.17f,.21f,.25f,1);
             if((x+y)%2==0)floor=floor.mult(.82f);
@@ -143,7 +159,7 @@ public final class RaceGame extends SimpleApplication {
                 box(rootNode,"exit pad",x*CELL,.035f,y*CELL,1.1f,.035f,1.1f,ColorRGBA.Green,false);
                 box(rootNode,"exit beacon",x*CELL,2.5f,y*CELL,.18f,2.5f,.18f,new ColorRGBA(.3f,1,.4f,1),false);
             }
-            mapTiles[i].setMaterial(material(tile=='#'?new ColorRGBA(.35f,.42f,.49f,1):tile=='G'?ColorRGBA.Green:new ColorRGBA(.15f,.23f,.29f,1),false));
+            mapTiles[i].setMaterial(material(tile=='#'?new ColorRGBA(.35f,.42f,.49f,1):tile=='G'?ColorRGBA.Green:tile==','?color(connection.id).mult(.55f):new ColorRGBA(.15f,.23f,.29f,1),false));
         }
     }
 
@@ -172,7 +188,11 @@ public final class RaceGame extends SimpleApplication {
         status.setText(!s.ready()?"WAITING FOR BOTH PLAYERS":s.stunned()>0?"DISABLED  //  "+seconds(s.stunned())+"s":s.jammed()>0?"EMP INTERFERENCE  //  MINIMAP OFFLINE":"REACH THE GREEN BEACON IN THE CENTRAL ARENA");
         nav.setText(s.navigating()?"AUTO PILOT ACTIVE  //  1s burst, hits cancel navigation":s.navUsed()?"AUTO PILOT SPENT  //  manual control": "AUTO PILOT  1 / 1  //  max 1s  //  "+(connection.id==0?"N":"M")+" to activate");
         weapon.setText((connection.id==0?"EMP / range 3 cells":"RAIL / range 8 cells")+"    "+(s.cooldown()==0?"READY":"cooldown "+seconds(s.cooldown())+"s")+"    HITS "+s.hits()+" / SHOTS "+s.shots());
-        if(s.winner()>=0) result.setText(s.winner()==connection.id?"VICTORY / EXIT REACHED":"DEFEAT / OPPONENT FINISHED");
+        scoring.setText("STEPS "+s.steps()+"    RATING "+s.score());
+        if(s.winner()>=0) {
+            result.setText(s.winner()==connection.id?"VICTORY / EXIT REACHED":"DEFEAT / OPPONENT FINISHED");
+            breakdown.setText("YOU "+s.steps()+" steps / "+s.score()+" pts\nRIVAL "+s.opponentSteps()+" steps / "+s.opponentScore()+" pts");
+        }
         effects.detachAllChildren();
         if(s.flash()>0) attackEffect(connection.id,s.x(),s.y(),s.facing());
         if(s.enemyFlash()>0 && s.enemyX()>=0) attackEffect(1-connection.id,s.enemyX(),s.enemyY(),s.enemyFacing());

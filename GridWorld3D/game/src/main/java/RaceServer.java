@@ -29,7 +29,7 @@ public final class RaceServer implements AutoCloseable {
                 socket.setTcpNoDelay(true);
                 sockets.add(socket);
                 DataOutputStream out=new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-                out.writeInt(1); out.writeInt(id); out.flush();
+                out.writeInt(2); out.writeInt(id); out.flush();
                 outputs.add(out);
                 Thread.ofPlatform().daemon().name("race-input-"+id).start(()->read(socket));
             }

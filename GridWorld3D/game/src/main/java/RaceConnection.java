@@ -13,7 +13,7 @@ public final class RaceConnection implements AutoCloseable {
         socket.connect(new InetSocketAddress("127.0.0.1",port),5000);
         socket.setTcpNoDelay(true); socket.setSoTimeout(10000);
         DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-        if(in.readInt()!=1) throw new IOException("Protocol version mismatch");
+        if(in.readInt()!=2) throw new IOException("Protocol version mismatch");
         id=in.readInt();
         out=new DataOutputStream(socket.getOutputStream());
         Thread.ofPlatform().daemon().name("race-snapshots").start(()->{

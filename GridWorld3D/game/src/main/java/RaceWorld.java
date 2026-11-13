@@ -4,29 +4,36 @@ import java.util.*;
 public final class RaceWorld {
     public static final int SIZE = 25, HZ = 20, GOAL = SIZE / 2;
     public static final int[] DX = {0, 1, 0, -1}, DY = {-1, 0, 1, 0};
-    public enum Action { FORWARD, BACK, LEFT, RIGHT, TURN_LEFT, TURN_RIGHT, FIRE, NAV }
+    public enum Action { FORWARD, BACK, TURN_LEFT, TURN_RIGHT, FIRE, NAV }
     public final char[][] map = maze();
     public final Player[] players = {new Player(1, 1, 1), new Player(SIZE - 2, SIZE - 2, 3)};
     public int tick, winner = -1;
 
     public static final class Player {
         public int x, y, facing, moveAt, turnAt, fireAt, stunnedUntil, immuneUntil, jammedUntil, flashUntil;
-        public int shots, hits, navUntil;
+        public int shots, hits, navUntil, steps, pendingTurn;
         public boolean navUsed;
         public final boolean[][] seen = new boolean[SIZE][SIZE];
+        public final boolean[][] visited = new boolean[SIZE][SIZE];
         public final EnumSet<Action> held = EnumSet.noneOf(Action.class);
         final ArrayDeque<int[]> route = new ArrayDeque<>();
         Player(int x, int y, int facing) { this.x = x; this.y = y; this.facing = facing; }
     }
 
-    public RaceWorld() { for (Player p : players) reveal(p); }
+    public RaceWorld() { for (Player p : players) { p.visited[p.y][p.x]=true; reveal(p); } }
+
+    public static int score(Player player) { return Math.max(0, 1000 - 10 * player.steps); }
 
     public void input(int id, Action action, boolean down) {
         Player p = players[id];
         boolean fresh = down && p.held.add(action);
         if (!down) p.held.remove(action);
         if (winner >= 0 || !fresh || tick < p.stunnedUntil) return;
+        if ((action == Action.TURN_LEFT || action == Action.TURN_RIGHT) && p.route.isEmpty()) {
+            p.pendingTurn = action == Action.TURN_LEFT ? -1 : 1;
+        }
         if (action == Action.NAV && !p.navUsed) {
+            p.pendingTurn = 0;
             p.navUsed = true;
             p.navUntil = tick + HZ;
             plan(p); // Only the server knows the maze; route cells are never sent to clients.
@@ -52,17 +59,15 @@ public final class RaceWorld {
                 move(p, dx, dy);
                 p.moveAt = tick + (id == 0 ? 4 : 7);
             } else if (p.route.isEmpty()) {
-                if (tick >= p.turnAt) {
-                    if (p.held.contains(Action.TURN_LEFT)) turn(p, -1, id);
-                    else if (p.held.contains(Action.TURN_RIGHT)) turn(p, 1, id);
+                if (tick >= p.turnAt && p.pendingTurn != 0) {
+                    turn(p, p.pendingTurn, id);
+                    p.pendingTurn = 0;
                 }
                 if (tick >= p.moveAt) {
                     int d = p.facing, sign = 1;
                     boolean moving = true;
                     if (p.held.contains(Action.FORWARD)) { }
                     else if (p.held.contains(Action.BACK)) sign = -1;
-                    else if (id == 0 && p.held.contains(Action.LEFT)) d = (d + 3) % 4;
-                    else if (id == 0 && p.held.contains(Action.RIGHT)) d = (d + 1) % 4;
                     else moving = false;
                     if (moving) {
                         move(p, DX[d] * sign, DY[d] * sign);
@@ -82,6 +87,8 @@ public final class RaceWorld {
     private void move(Player p, int dx, int dy) {
         if (Math.abs(dx) + Math.abs(dy) != 1 || !walkable(p.x + dx, p.y + dy)) return;
         p.x += dx; p.y += dy;
+        p.steps++;
+        p.visited[p.y][p.x]=true;
         reveal(p);
     }
 
@@ -110,6 +117,7 @@ public final class RaceWorld {
         p.hits++;
         enemy.stunnedUntil = tick + (id == 0 ? 40 : 50);
         enemy.immuneUntil = enemy.stunnedUntil + 20; // Recovery window prevents permanent stun locks.
+        enemy.pendingTurn = 0;
         enemy.route.clear(); // A successful hit permanently interrupts this navigation charge.
         enemy.navUntil = tick;
         if (id == 0) enemy.jammedUntil = tick + 100;
@@ -176,14 +184,15 @@ public final class RaceWorld {
     public RaceSnapshot snapshot(int id, boolean ready) {
         Player p = players[id], other = players[1-id];
         StringBuilder known = new StringBuilder(SIZE * SIZE);
-        for (int y=0; y<SIZE; y++) for (int x=0; x<SIZE; x++) known.append(p.seen[y][x] ? map[y][x] : '?');
+        for (int y=0; y<SIZE; y++) for (int x=0; x<SIZE; x++)
+            known.append(!p.seen[y][x] ? '?' : map[y][x]=='.' && p.visited[y][x] ? ',' : map[y][x]);
         boolean visible = (p.x-other.x)*(p.x-other.x)+(p.y-other.y)*(p.y-other.y) <= 10
             && lineOfSight(p.x,p.y,other.x,other.y);
         return new RaceSnapshot(tick, winner, ready, p.x, p.y, p.facing, p.navUsed, !p.route.isEmpty(),
             Math.max(0,p.stunnedUntil-tick), Math.max(0,p.fireAt-tick), Math.max(0,p.jammedUntil-tick),
             Math.max(0,p.flashUntil-tick), visible ? other.x : -1, visible ? other.y : -1,
             visible ? other.facing : -1, visible ? Math.max(0,other.flashUntil-tick) : 0,
-            p.shots, p.hits, known.toString());
+            p.shots, p.hits, p.steps, score(p), winner>=0?other.steps:-1, winner>=0?score(other):-1, known.toString());
     }
 
     private static char[][] maze() {

@@ -26,7 +26,7 @@ public final class RaceChecks {
             if(!args[1].equals("-"))java.nio.file.Files.writeString(java.nio.file.Path.of(args[1]),"ready");
             Thread.sleep(30000);return;
         }
-        fogAndSearch(); movement(); combat(); navigation(); networking(); startup();
+        fogAndSearch(); movement(); combat(); navigation(); networking(); startup(); scoringAndTurns();
         System.out.println("PASS: "+checks+" checks (original search, asymmetric rules, fog, victory, loopback TCP)");
     }
     private static void fogAndSearch() throws Exception {
@@ -57,8 +57,8 @@ public final class RaceChecks {
     }
     private static void movement() {
         RaceWorld w=arena();
-        press(w,0,RaceWorld.Action.LEFT);
-        check(w.players[0].y==4 && w.players[0].facing==1,"Scout must strafe without turning");
+        press(w,0,RaceWorld.Action.TURN_LEFT);
+        check(w.players[0].y==5 && w.players[0].x==5 && w.players[0].facing==0,"Scout left turn must rotate without moving");
         int x=w.players[1].x,y=w.players[1].y;
         press(w,1,RaceWorld.Action.TURN_LEFT);
         check(w.players[1].x==x && w.players[1].y==y && w.players[1].facing==2,"Tank must turn in place");
@@ -140,6 +140,47 @@ public final class RaceChecks {
         press(w,1,RaceWorld.Action.FIRE);
         check(w.winner==0 && w.players[0].x==12,"Knockback must stop and award victory on the goal");
         int tick=w.tick;w.step();check(w.tick==tick,"Finished match must freeze");
+    }
+    private static void scoringAndTurns() {
+        for(int id=0;id<2;id++) {
+            RaceWorld w=arena();RaceWorld.Player p=w.players[id];
+            int facing=p.facing;
+            w.input(id,RaceWorld.Action.TURN_LEFT,true);
+            w.input(id,RaceWorld.Action.TURN_LEFT,false); // A quick tap between server ticks must still turn.
+            w.step();
+            check(p.facing==(facing+3)%4 && p.steps==0,"Quick turn lost or charged a movement step");
+            while(w.tick<p.turnAt)w.step();
+            w.input(id,RaceWorld.Action.TURN_RIGHT,true);
+            for(int i=0;i<40;i++)w.step();
+            check(p.facing==facing,"Holding turn rotated more than once");
+            check(RaceWorld.score(p)==1000,"Turning changed efficiency score");
+            w.input(id,RaceWorld.Action.TURN_RIGHT,false);
+            press(w,id,RaceWorld.Action.FORWARD);
+            check(p.steps==1 && RaceWorld.score(p)==990,"Forward movement did not deduct ten points");
+            int x=p.x,y=p.y;
+            check(w.snapshot(id,true).known().charAt(y*25+x)==',',"Walked tile missing from trail");
+            while(w.tick<p.moveAt)w.step();
+            press(w,id,RaceWorld.Action.BACK);
+            check(p.steps==2 && RaceWorld.score(p)==980,"Backtracking must cost another step");
+            w.map[p.y+RaceWorld.DY[p.facing]][p.x+RaceWorld.DX[p.facing]]='#';
+            while(w.tick<p.moveAt)w.step();
+            press(w,id,RaceWorld.Action.FORWARD);
+            check(p.steps==2,"Blocked movement charged a step");
+        }
+        RaceWorld w=arena();press(w,1,RaceWorld.Action.FIRE);
+        check(w.players[0].steps==2 && RaceWorld.score(w.players[0])==980,"Knockback steps not scored");
+        check(w.players[1].steps==0 && RaceWorld.score(w.players[1])==1000,"Shooting should not charge movement steps");
+        w=new RaceWorld();press(w,0,RaceWorld.Action.NAV);while(w.tick<25)w.step();
+        check(w.players[0].steps>0 && RaceWorld.score(w.players[0])==1000-10*w.players[0].steps,"Navigation movement bypassed scoring");
+        check(w.snapshot(0,true).opponentSteps()==-1 && w.snapshot(0,true).opponentScore()==-1,"Live opponent progress leaked");
+        w=arena();w.players[0].x=11;w.players[0].y=12;w.players[0].facing=1;
+        press(w,0,RaceWorld.Action.FORWARD);
+        RaceSnapshot result=w.snapshot(0,true);
+        check(w.winner==0 && result.steps()==1 && result.score()==990 && result.opponentSteps()==0 && result.opponentScore()==1000,"Finish scoreboard incorrect");
+        press(w,0,RaceWorld.Action.BACK);
+        check(w.players[0].steps==1,"Final score changed after match end");
+        w.players[0].steps=200;
+        check(RaceWorld.score(w.players[0])==0,"Score fell below zero");
     }
     private static void startup() throws Exception {
         var folder=java.nio.file.Files.createTempDirectory("race-startup-check-");

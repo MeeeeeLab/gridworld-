@@ -136,11 +136,25 @@ public final class RaceLauncher {
                     Thread.sleep(50);
                 }
                 game.enqueue(()->{game.verifyView();return true;}).get(10,TimeUnit.SECONDS);
+                // Exercise the same key-code handler registered with jME, through both TCP clients.
+                int leftKey=connection.id==0?com.jme3.input.KeyInput.KEY_A:com.jme3.input.KeyInput.KEY_LEFT;
+                int rightKey=connection.id==0?com.jme3.input.KeyInput.KEY_D:com.jme3.input.KeyInput.KEY_RIGHT;
+                game.enqueue(()->{game.handleKey(leftKey,true);return true;}).get(5,TimeUnit.SECONDS);
+                Thread.sleep(600);
+                if(connection.latest.facing()!=(start.facing()+3)%4)throw new AssertionError("Left key mapping/one-press turn failed");
+                game.enqueue(()->{
+                    game.handleKey(leftKey,false);
+                    game.handleKey(rightKey,true);return true;
+                }).get(5,TimeUnit.SECONDS);
+                Thread.sleep(600);
+                if(connection.latest.facing()!=start.facing())throw new AssertionError("Right key mapping failed");
+                game.enqueue(()->{game.handleKey(rightKey,false);return true;}).get(5,TimeUnit.SECONDS);
                 connection.send(connection.id,RaceWorld.Action.NAV,true);
                 connection.send(connection.id,RaceWorld.Action.NAV,false);
                 Thread.sleep(2200);
                 RaceSnapshot after=connection.latest;
                 if(!after.navUsed() || after.navigating() || (after.x()==start.x() && after.y()==start.y()))throw new AssertionError("Network navigation did not move player");
+                if(after.steps()==0 || after.score()!=Math.max(0,1000-10*after.steps()))throw new AssertionError("Network score did not reflect movement");
                 game.enqueue(()->{game.verifyView();return true;}).get(10,TimeUnit.SECONDS);
                 var screenshot=new com.jme3.app.state.ScreenshotAppState(output.toAbsolutePath()+File.separator,"player-"+connection.id);
                 screenshot.setIsNumbered(false);
