@@ -11,7 +11,7 @@ public final class RaceWorld {
 
     public static final class Player {
         public int x, y, facing, moveAt, turnAt, fireAt, stunnedUntil, immuneUntil, jammedUntil, flashUntil;
-        public int shots, hits;
+        public int shots, hits, navUntil;
         public boolean navUsed;
         public final boolean[][] seen = new boolean[SIZE][SIZE];
         public final EnumSet<Action> held = EnumSet.noneOf(Action.class);
@@ -28,6 +28,7 @@ public final class RaceWorld {
         if (winner >= 0 || !fresh || tick < p.stunnedUntil) return;
         if (action == Action.NAV && !p.navUsed) {
             p.navUsed = true;
+            p.navUntil = tick + HZ;
             plan(p); // Only the server knows the maze; route cells are never sent to clients.
         }
     }
@@ -39,6 +40,8 @@ public final class RaceWorld {
         for (int n = 0; n < 2 && winner < 0; n++) {
             int id = (tick + n) % 2;
             Player p = players[id];
+            // Expire before checking stun: disabling a player never extends the one-second charge.
+            if (tick >= p.navUntil) p.route.clear();
             if (tick < p.stunnedUntil) continue;
             if (p.held.contains(Action.FIRE)) fire(id);
             if (winner >= 0) break;
@@ -96,22 +99,26 @@ public final class RaceWorld {
     private void fire(int id) {
         Player p = players[id], enemy = players[1 - id];
         if (tick < p.fireAt) return;
-        p.fireAt = tick + (id == 0 ? 55 : 65);
+        p.fireAt = tick + (id == 0 ? 60 : 70);
         p.flashUntil = tick + 5;
         p.shots++;
         int dx = enemy.x - p.x, dy = enemy.y - p.y;
         boolean hit = id == 0
-            ? dx * dx + dy * dy <= 6 && lineOfSight(p.x, p.y, enemy.x, enemy.y)
+            ? dx * dx + dy * dy <= 9 && lineOfSight(p.x, p.y, enemy.x, enemy.y)
             : cannonHit(p, enemy);
         if (!hit || tick < enemy.immuneUntil) return;
         p.hits++;
-        enemy.stunnedUntil = tick + (id == 0 ? 20 : 30);
+        enemy.stunnedUntil = tick + (id == 0 ? 40 : 50);
         enemy.immuneUntil = enemy.stunnedUntil + 20; // Recovery window prevents permanent stun locks.
-        if (id == 0) enemy.jammedUntil = tick + 40;
+        enemy.route.clear(); // A successful hit permanently interrupts this navigation charge.
+        enemy.navUntil = tick;
+        if (id == 0) enemy.jammedUntil = tick + 100;
         else {
-            move(enemy, DX[p.facing], DY[p.facing]);
-            // A push can displace an active route; replan without granting a second use.
-            if (!enemy.route.isEmpty()) plan(enemy);
+            for (int distance = 0; distance < 2; distance++) {
+                if (!walkable(enemy.x + DX[p.facing], enemy.y + DY[p.facing])) break;
+                move(enemy, DX[p.facing], DY[p.facing]);
+                if (enemy.x == GOAL && enemy.y == GOAL) break;
+            }
         }
         // Being pushed onto the goal also counts as finishing.
         if (enemy.x == GOAL && enemy.y == GOAL) winner = 1 - id;

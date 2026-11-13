@@ -68,7 +68,7 @@ public final class RaceChecks {
         RaceWorld w=arena();w.players[0].facing=0;
         press(w,0,RaceWorld.Action.FIRE);
         check(w.players[0].hits==1 && w.players[1].stunnedUntil>w.tick,"EMP must hit sideways within radius");
-        check(w.players[1].jammedUntil>w.tick && w.players[1].x==7,"EMP must jam without knockback");
+        check(w.players[1].jammedUntil-w.tick==100 && w.players[1].stunnedUntil-w.tick==40 && w.players[1].x==7,"EMP must jam without knockback");
         int until=w.players[1].stunnedUntil;
         w.players[0].fireAt=0;press(w,0,RaceWorld.Action.FIRE);
         check(w.players[1].stunnedUntil==until,"Recovery immunity must prevent stun lock");
@@ -78,7 +78,7 @@ public final class RaceChecks {
         check(w.players[0].hits==0,"EMP range too long");
         w=arena();w.players[0].x=2;press(w,1,RaceWorld.Action.FIRE);
         check(w.players[1].hits==1 && w.players[0].x==1,"Rail must hit at range and push away");
-        check(w.players[0].jammedUntil==0 && w.players[0].stunnedUntil-w.tick==30,"Rail effects must differ from EMP");
+        check(w.players[0].jammedUntil==0 && w.players[0].stunnedUntil-w.tick==50,"Rail effects must differ from EMP");
         int shots=w.players[1].shots;press(w,1,RaceWorld.Action.FIRE);
         check(w.players[1].shots==shots,"Weapon cooldown ignored");
         w=arena();w.players[0].y=6;press(w,1,RaceWorld.Action.FIRE);
@@ -92,26 +92,50 @@ public final class RaceChecks {
     }
     private static void navigation() {
         for(int id=0;id<2;id++) {
-            RaceWorld w=new RaceWorld();press(w,id,RaceWorld.Action.NAV);
+            RaceWorld w=new RaceWorld();
+            w.input(id,RaceWorld.Action.NAV,true); // Keep held through expiry.
             check(w.players[id].navUsed && !w.players[id].route.isEmpty(),"Auto failed to activate");
+            for(int i=0;i<19;i++)w.step();
+            check(w.snapshot(id,true).navigating(),"Navigation ended before its one-second window");
+            w.step();
+            check(w.tick==20 && !w.snapshot(id,true).navigating(),"Navigation must expire at exactly one second");
             int x=w.players[id].x,y=w.players[id].y;
-            w.players[id].stunnedUntil=w.tick+15;
-            for(int i=0;i<14;i++)w.step();
-            check(w.players[id].x==x && w.players[id].y==y,"Stun must pause autopilot");
-            for(int i=0;i<3000 && w.winner<0;i++)w.step();
-            check(w.winner==id,"Auto failed to finish for player "+id);
-            int tick=w.tick;w.step();check(w.tick==tick,"Finished match must freeze");
+            for(int i=0;i<80;i++)w.step();
+            check(w.players[id].x==x && w.players[id].y==y && w.winner<0,"Navigation continued after expiry");
+            w.input(id,RaceWorld.Action.NAV,false);press(w,id,RaceWorld.Action.NAV);
+            check(!w.snapshot(id,true).navigating(),"Second navigation use was granted");
+            int facing=w.players[id].facing;
+            press(w,id,RaceWorld.Action.TURN_LEFT);
+            check(w.players[id].facing==(facing+3)%4,"Manual control did not return after expiry");
+            w=new RaceWorld();press(w,id,RaceWorld.Action.NAV);
+            x=w.players[id].x;y=w.players[id].y;
+            w.players[id].stunnedUntil=50;
+            while(w.tick<60)w.step();
+            check(w.players[id].x==x && w.players[id].y==y && !w.snapshot(id,true).navigating(),"Stun extended the navigation deadline");
         }
-        RaceWorld w=new RaceWorld();press(w,0,RaceWorld.Action.NAV);w.players[0].route.clear();
-        press(w,0,RaceWorld.Action.NAV);
-        check(w.players[0].route.isEmpty(),"A second navigation use was granted");
-        w=arena();w.players[1].x=8;w.players[1].y=5;w.players[1].facing=3;
-        w.players[0].x=6;w.players[0].y=5;w.players[0].moveAt=100;
-        press(w,0,RaceWorld.Action.NAV); // Autopilot remains valid if displaced by the other weapon.
+        for(int attacker=0;attacker<2;attacker++) {
+            RaceWorld w=arena();int victim=1-attacker;
+            w.players[victim].moveAt=100;
+            press(w,victim,RaceWorld.Action.NAV);
+            press(w,attacker,RaceWorld.Action.FIRE);
+            check(w.players[attacker].hits==1 && w.players[victim].navUsed && !w.snapshot(victim,true).navigating(),"Attack must cancel navigation without refund");
+            while(w.tick<110)w.step();
+            press(w,victim,RaceWorld.Action.NAV);
+            check(w.players[victim].route.isEmpty(),"Interrupted navigation resumed or was refunded");
+        }
+        RaceWorld w=arena();press(w,1,RaceWorld.Action.FIRE);
+        check(w.players[0].x==3,"Cannon must push two free cells");
+        w=arena();w.map[5][3]='#';press(w,1,RaceWorld.Action.FIRE);
+        check(w.players[0].x==4,"Two-cell push crossed a wall");
+        w=arena();w.players[1].x=10;press(w,0,RaceWorld.Action.FIRE);
+        check(w.players[0].hits==0,"EMP reached beyond radius three");
+        w=arena();w.players[1].x=8;press(w,0,RaceWorld.Action.FIRE);
+        check(w.players[0].hits==1,"EMP must reach radius three");
+        w=arena();w.players[1].x=10;w.players[1].y=12;w.players[1].facing=1;
+        w.players[0].x=11;w.players[0].y=12;
         press(w,1,RaceWorld.Action.FIRE);
-        check(w.players[0].navUsed && w.players[0].x==5 && w.players[1].hits==1,"Knockback during navigation failed");
-        int[] next=w.players[0].route.peekFirst();
-        check(next!=null && Math.abs(next[1]-w.players[0].x)+Math.abs(next[0]-w.players[0].y)==1,"Knockback left a stale route");
+        check(w.winner==0 && w.players[0].x==12,"Knockback must stop and award victory on the goal");
+        int tick=w.tick;w.step();check(w.tick==tick,"Finished match must freeze");
     }
     private static void networking() throws Exception {
         try(RaceServer server=new RaceServer(0);RaceConnection a=new RaceConnection(server.port());RaceConnection b=new RaceConnection(server.port())) {
@@ -122,6 +146,8 @@ public final class RaceChecks {
             a.send(1,RaceWorld.Action.NAV,true);a.send(1,RaceWorld.Action.NAV,false);
             await(()->a.latest.navUsed() && b.latest.navUsed(),"Shared keyboard did not control both clients");
             await(()->(a.latest.x()!=1 || a.latest.y()!=1) && (b.latest.x()!=23 || b.latest.y()!=23),"Network snapshots did not update positions");
+            await(()->!a.latest.navigating() && !b.latest.navigating(),"Navigation expiry did not reach both clients");
+            check(a.latest.navUsed() && b.latest.navUsed(),"Network restored navigation charges");
             a.releaseAll();b.close();
             await(()->a.error!=null,"Disconnect did not stop the other client");
         }

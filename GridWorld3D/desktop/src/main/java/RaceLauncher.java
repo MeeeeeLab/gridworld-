@@ -7,6 +7,16 @@ import java.util.concurrent.TimeUnit;
 /** One server, two independent Java client processes and two first-person windows. */
 public final class RaceLauncher {
     public static void main(String[] args) throws Exception {
+        if(args.length>=1 && args[0].equals("--garage")) {
+            List<String> command=new ArrayList<>();
+            command.add(Path.of(System.getProperty("java.home"),"bin","java").toString());
+            if(System.getProperty("os.name").toLowerCase().contains("mac"))command.add("-XstartOnFirstThread");
+            command.addAll(List.of("-cp",System.getProperty("java.class.path"),"VehicleGarage"));
+            if(args.length==2)command.add(args[1]);
+            int exit=new ProcessBuilder(command).inheritIO().start().waitFor();
+            if(exit!=0)throw new IOException("Vehicle workshop failed: "+exit);
+            return;
+        }
         if(args.length>=2 && args[0].equals("--client")) {
             RaceConnection connection=new RaceConnection(Integer.parseInt(args[1]));
             RaceGame game=new RaceGame(connection);
@@ -64,13 +74,16 @@ public final class RaceLauncher {
                 while((connection.latest==null || !connection.latest.ready()) && System.nanoTime()<deadline)Thread.sleep(50);
                 RaceSnapshot start=connection.latest;
                 if(start==null || !start.ready())throw new AssertionError("Server never became ready");
-                Thread.sleep(1500);
+                while(!game.enqueue(game::isViewReady).get(10,TimeUnit.SECONDS)) {
+                    if(System.nanoTime()>deadline)throw new AssertionError("First rendered view never became ready");
+                    Thread.sleep(50);
+                }
                 game.enqueue(()->{game.verifyView();return true;}).get(10,TimeUnit.SECONDS);
                 connection.send(connection.id,RaceWorld.Action.NAV,true);
                 connection.send(connection.id,RaceWorld.Action.NAV,false);
                 Thread.sleep(2200);
                 RaceSnapshot after=connection.latest;
-                if(!after.navUsed() || (after.x()==start.x() && after.y()==start.y()))throw new AssertionError("Network navigation did not move player");
+                if(!after.navUsed() || after.navigating() || (after.x()==start.x() && after.y()==start.y()))throw new AssertionError("Network navigation did not move player");
                 game.enqueue(()->{game.verifyView();return true;}).get(10,TimeUnit.SECONDS);
                 var screenshot=new com.jme3.app.state.ScreenshotAppState(output.toAbsolutePath()+File.separator,"player-"+connection.id);
                 screenshot.setIsNumbered(false);

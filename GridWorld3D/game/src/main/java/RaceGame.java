@@ -103,16 +103,7 @@ public final class RaceGame extends SimpleApplication {
     }
 
     private void createOpponent() {
-        ColorRGBA c=color(1-connection.id);
-        if(connection.id==0) {
-            box(enemy,"tank hull",0,.55f,0,.72f,.45f,.85f,c,true);
-            box(enemy,"turret",0,1.1f,0,.43f,.25f,.45f,c.mult(.6f),true);
-            box(enemy,"barrel",0,1.12f,-.8f,.12f,.12f,.65f,c,true);
-            for(int side:new int[]{-1,1}) box(enemy,"track",side*.7f,.25f,0,.16f,.23f,.95f,new ColorRGBA(.08f,.1f,.12f,1),true);
-        } else {
-            box(enemy,"scout",0,.85f,0,.35f,.65f,.25f,c,true);
-            box(enemy,"visor",0,1.48f,-.15f,.27f,.13f,.15f,ColorRGBA.White,false);
-        }
+        enemy.attachChild(RaceVehicles.create(assetManager,1-connection.id));
     }
 
     private void terrain(RaceSnapshot s) {
@@ -160,8 +151,8 @@ public final class RaceGame extends SimpleApplication {
         clock.setText(String.format("RACE  %02d:%02d",s.tick()/20/60,s.tick()/20%60));
         position.setText("SECTOR "+s.x()+" / "+s.y()+"   HEADING "+"NESW".charAt(s.facing()));
         status.setText(!s.ready()?"WAITING FOR BOTH PLAYERS":s.stunned()>0?"DISABLED  //  "+seconds(s.stunned())+"s":s.jammed()>0?"EMP INTERFERENCE  //  MINIMAP OFFLINE":"REACH THE GREEN BEACON IN THE CENTRAL ARENA");
-        nav.setText(s.navigating()?"AUTO PILOT ACTIVE  //  movement locked, weapon available":s.navUsed()?"AUTO PILOT SPENT  //  manual control": "AUTO PILOT  1 / 1  //  "+(connection.id==0?"N":"M")+" to activate");
-        weapon.setText((connection.id==0?"EMP / range 2 cells":"RAIL / range 8 cells")+"    "+(s.cooldown()==0?"READY":"cooldown "+seconds(s.cooldown())+"s")+"    HITS "+s.hits()+" / SHOTS "+s.shots());
+        nav.setText(s.navigating()?"AUTO PILOT ACTIVE  //  1s burst, hits cancel navigation":s.navUsed()?"AUTO PILOT SPENT  //  manual control": "AUTO PILOT  1 / 1  //  max 1s  //  "+(connection.id==0?"N":"M")+" to activate");
+        weapon.setText((connection.id==0?"EMP / range 3 cells":"RAIL / range 8 cells")+"    "+(s.cooldown()==0?"READY":"cooldown "+seconds(s.cooldown())+"s")+"    HITS "+s.hits()+" / SHOTS "+s.shots());
         if(s.winner()>=0) result.setText(s.winner()==connection.id?"VICTORY / EXIT REACHED":"DEFEAT / OPPONENT FINISHED");
         effects.detachAllChildren();
         if(s.flash()>0) attackEffect(connection.id,s.x(),s.y(),s.facing());
@@ -181,8 +172,10 @@ public final class RaceGame extends SimpleApplication {
             }
         }
     }
+    public boolean isViewReady() { return placed; }
     public void verifyView() {
         RaceSnapshot s=connection.latest;
+        if(enemy.getTriangleCount()<200)throw new AssertionError("Vehicle model missing");
         if(!placed || s==null || s.known().chars().filter(c->c=='?').count()==0) throw new AssertionError("Missing view/fog");
         if(Math.abs(cam.getLocation().y-1.4f)>.01f || rootNode.getChild("floor")==null) throw new AssertionError("First-person scene missing");
         if(mini.getChildren().size()!=RaceWorld.SIZE*RaceWorld.SIZE+2) throw new AssertionError("Minimap missing");

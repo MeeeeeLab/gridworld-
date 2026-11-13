@@ -34,6 +34,7 @@ tasks.register('raceDemoZip', Zip) {
     from(tasks.named('installDist')) { include 'lib/**' }
     from('scripts/raceDemo')
     from(rootProject.file('DEMO.md'))
+    from(rootProject.file('../demo-downloads/models')) { into 'models' }
 }
 
 dependencies {
