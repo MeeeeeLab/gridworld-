@@ -18,3 +18,4 @@ rootProject.name = "GridWorldD"
 include ':desktop'
 
 include ':game'
+include ':algorithm'

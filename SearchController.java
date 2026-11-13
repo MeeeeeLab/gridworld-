@@ -7,22 +7,42 @@ public class SearchController {
     private Deque<Agent> path;
     private int goalRow;
     private int goalCol;
+    private int startRow;
+    private int startCol;
     private int steps;
     private int expCount;
     private int backCount;
     private int failCount;
     public SearchController(GridMap grid, int goalRow, int goalCol) {
+        this(grid, 0, 0, goalRow, goalCol);
+    }
+    public SearchController(GridMap grid, int startRow, int startCol, int goalRow, int goalCol) {
         this.grid = grid;
-       this.agent = new Agent(0, 0);
+       if (!grid.isWalkable(startRow, startCol) || !grid.isWalkable(goalRow, goalCol)) {
+           throw new IllegalArgumentException("Start and goal must be walkable");
+       }
+       this.agent = new Agent(startRow, startCol);
        this.visited = new boolean[grid.getRows()][];
        for (int i = 0; i < grid.getRows(); i++) {
            visited[i] = new boolean[grid.getRowLength(i)];
        }
-       this.visited[0][0] = true;
+       this.visited[startRow][startCol] = true;
        this.path = new ArrayDeque<>();
        path.push(new Agent(agent.row, agent.col));//新建agent对象，两个独立对象，初始坐标相同
        this.goalRow = goalRow;
        this.goalCol = goalCol;
+       this.startRow = startRow;
+       this.startCol = startCol;
+    }
+    /** Current DFS path, from the actual start to the current position. */
+    public int[][] getPath() {
+        int[][] result = new int[path.size()][2];
+        int i = 0;
+        for (var it = path.descendingIterator(); it.hasNext();) {
+            Agent cell = it.next();
+            result[i++] = new int[]{cell.row, cell.col};
+        }
+        return result;
     }
      public Agent getAgent() {
     return agent;
@@ -46,7 +66,7 @@ public class SearchController {
          visited[agent.row][agent.col]=true;
          path.push(new Agent(agent.row, agent.col));
          steps++;
-         if(oldRow==0&&oldCol==0&&(agent.row!=0||agent.col!=0)){
+         if(oldRow==startRow&&oldCol==startCol&&(agent.row!=startRow||agent.col!=startCol)){
             expCount++;
          }
          return SearchStatus.RUNNING;
@@ -61,7 +81,7 @@ public class SearchController {
         grid.setCell(agent.row, agent.col, '.');
          backCount++;
          steps++;
-         if(prev.row==0&&prev.col==0&&(agent.row!=0||agent.col!=0)){
+         if(prev.row==startRow&&prev.col==startCol&&(agent.row!=startRow||agent.col!=startCol)){
             failCount++;
          }
          agent.row=prev.row;

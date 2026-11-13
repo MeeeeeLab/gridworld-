@@ -15,6 +15,27 @@ application {
     }
 }
 
+tasks.register('raceDemo', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'RaceLauncher'
+}
+
+tasks.register('raceCheck', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'RaceChecks'
+}
+
+tasks.register('raceDemoZip', Zip) {
+    dependsOn installDist
+    archiveFileName = 'GridRift-demo.zip'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(tasks.named('installDist')) { include 'lib/**' }
+    from('scripts/raceDemo')
+    from(rootProject.file('DEMO.md'))
+}
+
 dependencies {
     implementation project(path: ':game')
     implementation libs.jmeDesktop

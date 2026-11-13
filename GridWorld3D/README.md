@@ -1,5 +1,7 @@
 # GridWorld3D
 
+双人第一人称竞速对战 Demo：运行 `run-demo.bat`（Windows）或 `bash run-demo.sh`（macOS/Linux）。规则、操作和验证方法见 [DEMO.md](DEMO.md)。
+
 This is the readme for GridWorld3D, try to keep it up to date with any information future-you will wish past-you
 remembered to write down
 

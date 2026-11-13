@@ -1,0 +1,9 @@
+plugins {
+    id 'java-library'
+}
+
+// Compile the real algorithm sources, rather than copying a second implementation.
+sourceSets.main.java {
+    srcDirs = ['../..']
+    include 'Agent.java', 'AgentMove.java', 'GridMap.java', 'PathFinder.java', 'SearchController.java', 'SearchStatus.java'
+}
