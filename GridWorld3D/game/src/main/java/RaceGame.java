@@ -14,6 +14,8 @@ public final class RaceGame extends SimpleApplication {
     private static final float CELL=2.5f, TILE=6;
     private static final ColorRGBA SCOUT=new ColorRGBA(.12f,.9f,.87f,1), TANK=new ColorRGBA(1,.56f,.22f,1);
     private final RaceConnection connection;
+    private final Runnable onViewReady;
+    private boolean readinessReported;
     private final Geometry[] mapTiles=new Geometry[RaceWorld.SIZE*RaceWorld.SIZE];
     private final Node enemy=new Node("opponent"), effects=new Node("attacks"), mini=new Node("minimap");
     private final char[] drawn=new char[RaceWorld.SIZE*RaceWorld.SIZE];
@@ -23,7 +25,21 @@ public final class RaceGame extends SimpleApplication {
     private boolean placed;
     private int lastTick=-1;
 
-    public RaceGame(RaceConnection connection) { this.connection=connection; }
+    public RaceGame(RaceConnection connection, Runnable onViewReady) {
+        this.connection=connection; this.onViewReady=onViewReady;
+    }
+    @Override public void simpleRender(com.jme3.renderer.RenderManager manager) {
+        if(placed && !readinessReported) {
+            onViewReady.run();
+            readinessReported=true;
+        }
+    }
+    @Override public void handleError(String message, Throwable failure) {
+        System.err.println("Player " + (connection.id+1) + " window failed: " + message);
+        if(failure!=null)failure.printStackTrace();
+        connection.close();
+        System.exit(1);
+    }
     private ColorRGBA color(int id) { return id==0 ? SCOUT : TANK; }
 
     @Override public void simpleInitApp() {
@@ -35,6 +51,9 @@ public final class RaceGame extends SimpleApplication {
         DirectionalLight sun=new DirectionalLight(); sun.setDirection(new Vector3f(-1,-3,-2).normalizeLocal()); rootNode.addLight(sun);
         rootNode.attachChild(enemy); rootNode.attachChild(effects);
         createOpponent(); hud(); controls();
+        inputManager.addListener((ActionListener)(name,down,tpf)->{
+            if(down)System.out.println("Player "+(connection.id+1)+" requested exit with Esc");
+        },INPUT_MAPPING_EXIT);
     }
 
     private Material material(ColorRGBA color, boolean lit) {
@@ -180,5 +199,8 @@ public final class RaceGame extends SimpleApplication {
         if(Math.abs(cam.getLocation().y-1.4f)>.01f || rootNode.getChild("floor")==null) throw new AssertionError("First-person scene missing");
         if(mini.getChildren().size()!=RaceWorld.SIZE*RaceWorld.SIZE+2) throw new AssertionError("Minimap missing");
     }
-    @Override public void destroy() {connection.close();super.destroy();}
+    @Override public void destroy() {
+        System.out.println("Player "+(connection.id+1)+" window closed; first frame rendered="+readinessReported);
+        connection.close();super.destroy();
+    }
 }

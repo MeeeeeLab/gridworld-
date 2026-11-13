@@ -68,3 +68,9 @@ Demo 有意保留的范围：固定地图种子、不做联网账号和远程连
 - 展示窗口内按住鼠标左键拖动观察，WASD 移动镜头，Esc 退出。
 - 试玩 ZIP 的 `models` 目录附有两份 jMonkeyEngine 原生 `.j3o` 模型和预览图；可通过 `assetManager.loadModel(...)` 导入 jME 项目。
 - 可编辑的程序化建模源码是 `game/src/main/java/RaceVehicles.java`。侦察兵 1,312 个三角面，重装车 2,616 个三角面；轮子/履带当前为静态造型。
+
+## macOS 双窗口启动与故障日志
+
+启动器会先等待玩家 1 完成首帧渲染，再启动玩家 2。每个进程使用独立的临时目录，macOS 子进程均带 `-XstartOnFirstThread`，Dock 中显示各自玩家编号。Mac 上两个窗口错位排列，避免第二个窗口超出屏幕或完全盖住第一个；启动脚本优先使用已安装的 Java 21。
+
+如果任一窗口启动失败，终端会保留具体原因及日志路径。日志位于启动目录下 `logs/run-.../player-1.log` 和 `player-2.log`；JVM 崩溃时另有对应的 `player-N-crash.log`。可以将报错日志内容提供给开发者诊断。在 Mac 终端执行 `bash run-demo.sh`，并等待显示两条 `window ready`。本次启动流程及错误处理在 Linux 验证，macOS 特定失败仍需结合实际日志确认。

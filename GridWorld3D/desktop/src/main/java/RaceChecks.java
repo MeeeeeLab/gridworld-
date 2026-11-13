@@ -22,7 +22,11 @@ public final class RaceChecks {
         check(predicate.getAsBoolean(),message);
     }
     public static void main(String[] args) throws Exception {
-        fogAndSearch(); movement(); combat(); navigation(); networking();
+        if(args.length==2 && args[0].equals("--startup-probe")) {
+            if(!args[1].equals("-"))java.nio.file.Files.writeString(java.nio.file.Path.of(args[1]),"ready");
+            Thread.sleep(30000);return;
+        }
+        fogAndSearch(); movement(); combat(); navigation(); networking(); startup();
         System.out.println("PASS: "+checks+" checks (original search, asymmetric rules, fog, victory, loopback TCP)");
     }
     private static void fogAndSearch() throws Exception {
@@ -136,6 +140,32 @@ public final class RaceChecks {
         press(w,1,RaceWorld.Action.FIRE);
         check(w.winner==0 && w.players[0].x==12,"Knockback must stop and award victory on the goal");
         int tick=w.tick;w.step();check(w.tick==tick,"Finished match must freeze");
+    }
+    private static void startup() throws Exception {
+        var folder=java.nio.file.Files.createTempDirectory("race-startup-check-");
+        var ready=folder.resolve("ready");var log=folder.resolve("player.log");
+        String javaExecutable=java.nio.file.Path.of(System.getProperty("java.home"),"bin","java").toString();
+        try {
+            Process exited=new ProcessBuilder(javaExecutable,"-version").redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            exited.waitFor();
+            boolean rejected=false;
+            try {RaceLauncher.awaitWindow(exited,ready,log,5);}catch(IOException expected){rejected=true;}
+            check(rejected,"Launcher accepted an exited process without a window");
+            for(boolean announces:new boolean[]{true,false}) {
+                Process child=new ProcessBuilder(javaExecutable,"-cp",System.getProperty("java.class.path"),"RaceChecks","--startup-probe",announces?ready.toString():"-")
+                    .redirectErrorStream(true).redirectOutput(log.toFile()).start();
+                try {
+                    if(announces) {
+                        RaceLauncher.awaitWindow(child,ready,log,5);
+                        check(child.isAlive(),"Launcher did not wait for a live ready process");
+                    } else {
+                        rejected=false;
+                        try {RaceLauncher.awaitWindow(child,ready,log,0);}catch(IOException expected){rejected=true;}
+                        check(rejected,"Launcher did not time out an unready process");
+                    }
+                } finally {child.destroy();child.waitFor();java.nio.file.Files.deleteIfExists(ready);}
+            }
+        } finally {java.nio.file.Files.deleteIfExists(log);java.nio.file.Files.deleteIfExists(folder);}
     }
     private static void networking() throws Exception {
         try(RaceServer server=new RaceServer(0);RaceConnection a=new RaceConnection(server.port());RaceConnection b=new RaceConnection(server.port())) {
